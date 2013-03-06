@@ -1,0 +1,57 @@
+=pod
+
+=head1 HW2 User Guide
+
+=head1 SYNOPSIS
+
+Usage:
+    perl hw2.pl program machine
+
+=head1 DESCRIPTION
+
+This script emulates a simple machine that accepts only R-type instructions,
+and outputs the resulting HP diagrams.  The only operations allowed are
+addition and multiplication. It accepts two files as inputs: the first
+specifying the program to be run, and the second containing the specs of the
+machine.  The output will also note any dependencies that block execution for
+any length of time.
+
+This script uses only vanilla perl.  No special modules are needed.
+
+=head1 REQUIRED ARGUMENTS
+
+The filenames of two configuration files are required for this script.
+
+=over
+
+=item program
+
+In order for this script to function, a file is required in the current
+directory that specifies the instructions to be run.  The instructions must
+be in a specific format, and one-per-line.
+
+The format is as follows:
+
+    $X<-D($Y,$Z)
+
+Where X, Y and Z are integers, and D is either '+' or '*'.
+Note that the register numbers must be less than the total number of registers
+specified in the machine file, or the script will fail.
+
+=item machine
+
+This file specifies certain charicteristics of the machine to be emulated.
+The following options must be given:
+
+* Number of D-units
+* Number of Registers
+* Time of + operation
+* Time of * operation
+* Time of IU
+
+These values are to be specified one-per-line, in the order described above.
+The format should be as follows:
+
+    Name=value
+
+=back
