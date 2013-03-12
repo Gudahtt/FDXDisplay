@@ -54,7 +54,7 @@ sub instruction_queue {
 	my ($left, $op, $right_first, $right_second) = parse_input($line);
 	
 	if ($left >= $global_registers || $right_first >= $global_registers || $right_second >= $global_registers) {
-	    die("Not enough registers");
+	    #die("Not enough registers");
 	}
 
 	my @instruction = ($left, $op, $right_first, $right_second);
@@ -257,53 +257,60 @@ sub display_HP {
     my $col_max = 0;
 
     foreach my $instr (@output) {
-	my $instr_number = $$instr[0];
-	my $time_slice   = $$instr[1];
-	my $lu_time      = $$instr[2];
-	my $d_time       = $$instr[3];
-	my $operator     = $$instr[4];
-	my $d_start_time = $$instr[5];
+	    my $instr_number = $$instr[0];
+	    my $time_slice   = $$instr[1];
+	    my $lu_time      = $$instr[2];
+	    my $d_time       = $$instr[3];
+	    my $operator     = $$instr[4];
+	    my $d_start_time = $$instr[5];
 
-	my $col_counter = 0;
-	my $line = "S" . $instr_number . ":   ";
+	    my $col_counter = 0;
+	    my $line = "S" . $instr_number . ":   ";
 	
-	for (my $i = $time_slice; $i > 0; $i--) {
-	    $line .= "    ";
-	    $col_counter++;
-	}
-	$line =~ s/\s$/|/g;
-
-	$line  .= "IU |";
-	$col_counter++;
-
-	for (my $j = $lu_time-1; $j > 0; $j--) {
-	    $line .= "IU |";
-	    $col_counter++;
-	}
-
-	if (defined $d_start_time) {
-	    # find 'waiting for d-unit' time
-	    for ( my $t = $d_start_time - ($time_slice + $lu_time); $t > 0; $t--) {
-		$line .= " - |";
-		$col_counter++;
+	    for (my $i = $time_slice; $i > 0; $i--) {
+	        $line .= "    ";
+	        $col_counter++;
 	    }
-	}
+	    $line =~ s/\s$/|/g;
 
-	$line = $line . " $operator |";
-	$col_counter++;
+	    $line  .= "IU |";
+	    $col_counter++;
 
-	for (my $k = $d_time-1; $k > 0; $k--) {
+	    for (my $j = $lu_time-1; $j > 0; $j--) {
+	        $line .= "IU |";
+	        $col_counter++;
+	    }
+
+	    if (defined $d_start_time) {
+	        # find 'waiting for d-unit' time
+	        for ( my $t = $d_start_time - ($time_slice + $lu_time); $t > 0; $t--) {
+		    $line .= " - |";
+		    $col_counter++;
+	        }
+	    }
+
 	    $line = $line . " $operator |";
 	    $col_counter++;
-	}
 
-	print $line;
-	print "\n";
+	    for (my $k = $d_time-1; $k > 0; $k--) {
+	        $line = $line . " $operator |";
+	        $col_counter++;
+	    }
 
-	if ($col_counter > $col_max) {
-	    $col_max = $col_counter;
-	}
+	    print $line;
+	    print "\n";
+
+	    if ($col_counter > $col_max) {
+	        $col_max = $col_counter;
+	    }
     }
+
+    my $dividing_line = "------";
+    for (my $i = 0; $i < $col_max; $i++) {
+        $dividing_line .= "----";
+    }
+    $dividing_line .= "\n";
+    print $dividing_line;
 
     my $time_axis = "time:  0";
     for (my $i = 1; $i <= $col_max - 1; $i++) {
