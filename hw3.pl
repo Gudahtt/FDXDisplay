@@ -54,7 +54,7 @@ sub instruction_queue {
 	my ($left, $op, $right_first, $right_second) = parse_input($line);
 	
 	if ($left >= $global_registers || $right_first >= $global_registers || $right_second >= $global_registers) {
-	    #die("Not enough registers");
+	    die("Not enough registers");
 	}
 
 	my @instruction = ($left, $op, $right_first, $right_second);
@@ -87,7 +87,7 @@ sub run_program {
 
     while (scalar @instr_queue > 0 || scalar @in_progress > 0) {
 	# check for iu availability
-	if ($iu_in_use eq 0 && scalar @instr_queue > 0) {
+	if ($iu_in_use eq 0 && $d_in_use < $d_units && scalar @instr_queue > 0) {
 	    my $instr = $instr_queue[0];
 	    my $operator = $$instr[1];
 
@@ -114,41 +114,24 @@ sub run_program {
 		my $in_progress_d_time        = $$prog_instr[5];
 		my $in_progress_instr_counter = $$prog_instr[6];
 
-		# read-after-write dependency
-		if ($in_progress_l_reg eq $r_reg1 or $in_progress_l_reg eq $r_reg2) {
-		    my @dependency_entry = ($instruction_counter, $time_slice, "OI", $in_progress_instr_counter);
+		# write-after-write dependency
+		if ($in_progress_l_reg eq $l_reg) {
+		    my @dependency_entry = ($instruction_counter, $time_slice, "OO", $in_progress_instr_counter);
 		    push (@dependency_blocks, \@dependency_entry);
-		    
+
 		    $block = 1;
 		    last;
-		}
-		# write-after-write dependency
-		elsif ($in_progress_l_reg eq $l_reg) {
-		    if (($in_progress_load_time + $in_progress_d_time) >= ($lu_time + $d_time)) {
-			my @dependency_entry = ($instruction_counter, $time_slice, "OO", $in_progress_instr_counter);
-			push (@dependency_blocks, \@dependency_entry);
-
-			$block = 1;
-			last;
-		    }
-		}
-		# write-after-read dependency
-		elsif ($in_progress_r_reg1 eq $l_reg || $in_progress_r_reg2 eq $l_reg) {
-		    if ($in_progress_load_time >= ($lu_time + $d_time)) {
-			my @dependency_entry = ($instruction_counter, $time_slice, "IO", $in_progress_instr_counter);
-			push (@dependency_blocks, \@dependency_entry);
-
-			$block = 1;
-			last;
-		    }
 		}
 		
 	    }
 
 	    if ($block == 0) {
 		# no dependency, process instruction
+		# scoreboard - instruction issued here
 		shift @instr_queue;
 		$iu_in_use = 1;
+		$d_in_use++;
+
 
 		my @progress = @$instr;
 
@@ -157,6 +140,8 @@ sub run_program {
 		push (@progress, $load_time);
 		push (@progress, $d_time);
 		push (@progress, $instruction_counter);
+		my $state = 0;
+		push (@progress, $state);
 
 		my @output_entry = ($instruction_counter, $time_slice, $lu_time, $d_time, $operator);
 		push(@output, \@output_entry);
@@ -167,8 +152,12 @@ sub run_program {
 	}
 
 	# no IU-units available
-	elsif (scalar @instr_queue > 0) {
+	elsif (scalar @instr_queue > 0 && $iu_in_use eq 1) {
 	    my @dependency_entry = ($instruction_counter, $time_slice, "IU", -1);
+	    push (@dependency_blocks, \@dependency_entry);
+	}
+	elsif (scalar @instr_queue > 0 && $d_in_use >= $d_units) {
+	    my @dependency_entry = ($instruction_counter, $time_slice, "D", -1);
 	    push (@dependency_blocks, \@dependency_entry);
 	}
 
@@ -178,8 +167,43 @@ sub run_program {
 	    my @cur_instr = @{$in_progress[$j]};
 	    
 	    #print "Instruction: " . $cur_instr[6] . " d_units: " . $d_in_use . " d_time: " . $cur_instr[5] . " time slice: " . $time_slice . "\n";
-	    # load_time
-	    if ($cur_instr[4] > 0) {
+
+	    #print "State: " . $cur_instr[7] . " d_time: " . $cur_instr[4] . "\n";
+	    # starting
+	    if ( $cur_instr[7] eq 0) {
+		# read-after-write dependency
+		my $block = 0;
+		foreach my $prog_instr (@in_progress) {
+		    my $in_progress_l_reg         = $$prog_instr[0];
+		    my $in_progress_r_reg1        = $$prog_instr[2];
+		    my $in_progress_r_reg2        = $$prog_instr[3];
+		    my $in_progress_load_time     = $$prog_instr[4];
+		    my $in_progress_d_time        = $$prog_instr[5];
+		    my $in_progress_instr_counter = $$prog_instr[6];
+
+		    if (($in_progress_l_reg eq $cur_instr[2] or $in_progress_l_reg eq $cur_instr[3]) && $in_progress_instr_counter ne $cur_instr[6]) {
+			my @dependency_entry = ($cur_instr[6], $time_slice, "OI", $in_progress_instr_counter);
+			push (@dependency_blocks, \@dependency_entry);
+		    
+			$block = 1;
+			last;
+		    }
+		}
+
+		# no RAW - start
+		if ($block eq 0) {
+		    $cur_instr[7] = 1;
+		    
+		    $cur_instr[4]--;
+		    if ($cur_instr[4] eq 0) {
+			$iu_freed = 1;
+			$cur_instr[4] = -1; # indicates that d_time should start
+		    }
+
+		}
+	    }
+	    #load_time
+	    elsif ($cur_instr[4] > 0) {
 		$cur_instr[4]--;
 		if ($cur_instr[4] eq 0) {
 		    $iu_freed = 1;
@@ -188,27 +212,19 @@ sub run_program {
 	    }
 	    # d_time start
 	    elsif ($cur_instr[4] eq -1) {
-		if ($d_in_use < $d_units) {
-		    $d_in_use++;
-		    $cur_instr[5]--;
+		$cur_instr[5]--;
 
-		    $cur_instr[4] = 0; # set flag back to normal
+		$cur_instr[4] = 0; # set flag back to normal
 		    
-		    my $d_start_time = $time_slice;
-		    my $found_entry = 0;
-		    for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
-			# find current instruction to add d_start_time
-			if (${$output[$output_entry]}[0] eq $cur_instr[6]) {
-			    push (@{$output[$output_entry]}, $d_start_time);
-			    $found_entry = 1;
-			    last;
-			}
+		my $d_start_time = $time_slice;
+		my $found_entry = 0;
+		for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
+		    # find current instruction to add d_start_time
+		    if (${$output[$output_entry]}[0] eq $cur_instr[6]) {
+			push (@{$output[$output_entry]}, $d_start_time);
+			$found_entry = 1;
+			last;
 		    }
-		}
-		# no d-units available
-		else {
-		    my @dependency_entry = ($cur_instr[6], $time_slice, "D", -1);
-		    push (@dependency_blocks, \@dependency_entry);
 		}
 	    }
 	    # d_time
@@ -219,13 +235,56 @@ sub run_program {
 	    $in_progress[$j] = \@cur_instr;
 
 	    # instruction finished
-	    if ($cur_instr[5] <= 0) {
+	    
+	    if ($cur_instr[7] ne -2 && $cur_instr[5] <= 0) {
 		$d_freed++;
+	    }
+	    
+	    if ($cur_instr[5] <= 0) {
+		my $block = 0;
+		foreach my $prog_instr (@in_progress) {
+		    my $in_progress_l_reg         = $$prog_instr[0];
+		    my $in_progress_r_reg1        = $$prog_instr[2];
+		    my $in_progress_r_reg2        = $$prog_instr[3];
+		    my $in_progress_load_time     = $$prog_instr[4];
+		    my $in_progress_d_time        = $$prog_instr[5];
+		    my $in_progress_instr_counter = $$prog_instr[6];
 
-		push(@to_be_removed, $j);
+		    # write-after-read dependency
+		    if ($in_progress_r_reg1 eq $cur_instr[0] || $in_progress_r_reg2 eq $cur_instr[0]) {
+			my @dependency_entry = ($instruction_counter, $time_slice, "IO", $in_progress_instr_counter);
+			push (@dependency_blocks, \@dependency_entry);
+
+			$block = 1;
+			last;
+		    }
+		}
+
+		# no RAW - start
+		if ($block eq 1) {
+		    $cur_instr[7] = -2;
+		}
+		else {
+		    push(@to_be_removed, $j);
+
+		    my $end_time = $time_slice;
+		    my $found_entry = 0;
+		    for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
+			# find current instruction to add d_start_time
+			if (${$output[$output_entry]}[0] eq $cur_instr[6]) {
+			    push (@{$output[$output_entry]}, $end_time);
+			    $found_entry = 1;
+			    last;
+			}
+		    }
+		    if ($found_entry eq 0) {
+			die ("Can't find entry");
+		    }
+		}
 	    }
 	}
 
+	#TODO  Should be removed more safely from array - indices changing here
 	foreach my $num (@to_be_removed) {
 	    splice(@in_progress, $num, 1);
 	}
@@ -257,60 +316,54 @@ sub display_HP {
     my $col_max = 0;
 
     foreach my $instr (@output) {
-	    my $instr_number = $$instr[0];
-	    my $time_slice   = $$instr[1];
-	    my $lu_time      = $$instr[2];
-	    my $d_time       = $$instr[3];
-	    my $operator     = $$instr[4];
-	    my $d_start_time = $$instr[5];
+	my $instr_number = $$instr[0];
+	my $time_slice   = $$instr[1];
+	my $lu_time      = $$instr[2];
+	my $d_time       = $$instr[3];
+	my $operator     = $$instr[4];
+	my $d_start_time = $$instr[5];
+	my $end_time     = $$instr[6];
 
-	    my $col_counter = 0;
-	    my $line = "S" . $instr_number . ":   ";
+	my $col_counter = 0;
+	my $line = "S" . $instr_number . ":   ";
 	
-	    for (my $i = $time_slice; $i > 0; $i--) {
-	        $line .= "    ";
-	        $col_counter++;
-	    }
-	    $line =~ s/\s$/|/g;
-
-	    $line  .= "IU |";
+	for (my $i = $time_slice; $i > 0; $i--) {
+	    $line .= "    ";
 	    $col_counter++;
+	}
+	$line =~ s/\s$/|/g;
 
-	    for (my $j = $lu_time-1; $j > 0; $j--) {
-	        $line .= "IU |";
-	        $col_counter++;
+	$line  .= "IU |";
+	$col_counter++;
+
+	for (my $j = $lu_time-1; $j > 0; $j--) {
+	    $line .= "IU |";
+	    $col_counter++;
+	}
+
+	if (defined $d_start_time) {
+	    # find 'waiting for d-unit' time
+	    for ( my $t = $d_start_time - ($time_slice + $lu_time); $t > 0; $t--) {
+		$line .= " - |";
+		$col_counter++;
 	    }
+	}
 
-	    if (defined $d_start_time) {
-	        # find 'waiting for d-unit' time
-	        for ( my $t = $d_start_time - ($time_slice + $lu_time); $t > 0; $t--) {
-		    $line .= " - |";
-		    $col_counter++;
-	        }
-	    }
+	$line = $line . " $operator |";
+	$col_counter++;
 
+	for (my $k = $d_time-1; $k > 0; $k--) {
 	    $line = $line . " $operator |";
 	    $col_counter++;
+	}
 
-	    for (my $k = $d_time-1; $k > 0; $k--) {
-	        $line = $line . " $operator |";
-	        $col_counter++;
-	    }
+	print $line;
+	print "\n";
 
-	    print $line;
-	    print "\n";
-
-	    if ($col_counter > $col_max) {
-	        $col_max = $col_counter;
-	    }
+	if ($col_counter > $col_max) {
+	    $col_max = $col_counter;
+	}
     }
-
-    my $dividing_line = "------";
-    for (my $i = 0; $i < $col_max; $i++) {
-        $dividing_line .= "----";
-    }
-    $dividing_line .= "\n";
-    print $dividing_line;
 
     my $time_axis = "time:  0";
     for (my $i = 1; $i <= $col_max - 1; $i++) {
