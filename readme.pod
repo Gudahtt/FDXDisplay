@@ -1,11 +1,11 @@
 =pod
 
-=head1 HW2 User Guide
+=head1 HW3 User Guide
 
 =head1 SYNOPSIS
 
 Usage:
-    perl hw2.pl program machine
+    perl hw3.pl program machine
 
 =head1 DESCRIPTION
 
@@ -14,7 +14,7 @@ and outputs the resulting HP diagrams.  The only operations allowed are
 addition and multiplication. It accepts two files as inputs: the first
 specifying the program to be run, and the second containing the specs of the
 machine.  The output will also note any dependencies that block execution for
-any length of time.
+any length of time.  It uses the Scoreboard method.
 
 This script uses only vanilla perl.  No special modules are needed.
 
