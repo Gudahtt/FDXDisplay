@@ -11,20 +11,27 @@ sub parse_input {
     $line =~ m/\$(\d+?)\s?<-\s?([\*\+])\(\$(\d+?),\$(\d+?)\)/ms
         or die("Input could not be parsed. Must be of form 'R1<-D(R2,R3)', where D is * or +\n");
 
-    return ($1, $2, $3, $4);
+	my $input = {
+		'R1' => $1,
+		'Op' => $2,
+		'R2' => $3,
+		'R3' => $4
+	};
+	
+    return $input;
 }
 
 sub parse_machine {
     my $M_fn = shift;
 
-    open my $machine, '<', $M_fn
+    open my $machine_file, '<', $M_fn
         or die("Can't open machine file");
 
-    my @lines = <$machine>;
+    my @lines = <$machine_file>;
     if (scalar @lines != 5) {
         die("Wrong number of lines in machine file");
     }
-
+	
     $lines[0] =~ m/=\s*(\d+)/ms;
     my $d_units = $1;
 
@@ -39,8 +46,16 @@ sub parse_machine {
 
     $lines[4] =~ m/=\s*(\d+)/ms;
     my $lu_time = $1;
+	
+	my $machine = {
+		'd_units' => $d_units,
+		'global_registers' => $global_registers,
+		'plus_time' => $plus_time,
+		'mult_time' => $mult_time,
+		'lu_time' => $lu_time
+	};
 
-    return ($d_units, $global_registers, $plus_time, $mult_time, $lu_time);
+    return $machine;
 }
 
 sub instruction_queue {
@@ -51,14 +66,14 @@ sub instruction_queue {
     my @queue;
 
     while (my $line = <$program>) {
+		my $input = parse_input($line);
         my ($left, $op, $right_first, $right_second) = parse_input($line);
         
-        if ($left >= $global_registers || $right_first >= $global_registers || $right_second >= $global_registers) {
-            #die("Not enough registers");
+        if ($input->{'R1'} >= $global_registers || $input->{'R2'} >= $global_registers || $input->{'R3'} >= $global_registers) {
+            die("Not enough registers");
         }
 
-        my @instruction = ($left, $op, $right_first, $right_second);
-        push (@queue, \@instruction);
+        push (@queue, $input);
     }
 
     return @queue;
@@ -68,7 +83,7 @@ sub run_program {
     my $P_fn = shift;
     my $M_fn = shift;
     
-    my ($d_units, $global_registers, $plus_time, $mult_time, $lu_time) = parse_machine($M_fn);
+	my $machine = = parse_machine($M_fn);
     
     my $d_in_use = 0;
     my $iu_in_use = 0;
@@ -76,7 +91,7 @@ sub run_program {
     my $iu_freed = 0;
     my $d_freed = 0;
 
-    my @instr_queue = instruction_queue($P_fn, $global_registers);
+    my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
     my @in_progress;
     my @output;
     my @dependency_blocks;
@@ -93,10 +108,10 @@ sub run_program {
 
             my $d_time;
             if ($operator eq '+') {
-                $d_time += $plus_time;
+                $d_time += $machine->{'plus_time'};
             }
             else {
-                $d_time += $mult_time;
+                $d_time += $machine->{'mult_time'};
             }
 
             # check for reg depedency
@@ -124,7 +139,7 @@ sub run_program {
                 }
                 # write-after-write dependency
                 elsif ($in_progress_l_reg eq $l_reg) {
-                    if (($in_progress_load_time + $in_progress_d_time) >= ($lu_time + $d_time)) {
+                    if (($in_progress_load_time + $in_progress_d_time) >= ($machine->{'lu_time'} + $d_time)) {
                         my @dependency_entry = ($instruction_counter, $time_slice, "OO", $in_progress_instr_counter);
                         push (@dependency_blocks, \@dependency_entry);
 
@@ -134,7 +149,7 @@ sub run_program {
                 }
                 # write-after-read dependency
                 elsif ($in_progress_r_reg1 eq $l_reg || $in_progress_r_reg2 eq $l_reg) {
-                    if ($in_progress_load_time >= ($lu_time + $d_time)) {
+                    if ($in_progress_load_time >= ($machine->{'lu_time'} + $d_time)) {
                         my @dependency_entry = ($instruction_counter, $time_slice, "IO", $in_progress_instr_counter);
                         push (@dependency_blocks, \@dependency_entry);
 
@@ -152,13 +167,13 @@ sub run_program {
 
                 my @progress = @$instr;
 
-                my $load_time = $lu_time;
+                my $load_time = $machine->{'lu_time'};
 
                 push (@progress, $load_time);
                 push (@progress, $d_time);
                 push (@progress, $instruction_counter);
 
-                my @output_entry = ($instruction_counter, $time_slice, $lu_time, $d_time, $operator);
+                my @output_entry = ($instruction_counter, $time_slice, $machine->{'lu_time'}, $d_time, $operator);
                 push(@output, \@output_entry);
                 $instruction_counter++;
 
@@ -188,7 +203,7 @@ sub run_program {
             }
             # d_time start
             elsif ($cur_instr[4] eq -1) {
-                if ($d_in_use < $d_units) {
+                if ($d_in_use < $machine->{'d_units'}) {
                     $d_in_use++;
                     $cur_instr[5]--;
 
