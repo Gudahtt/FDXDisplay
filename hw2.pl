@@ -85,6 +85,7 @@ sub run_program {
 	my $machine = parse_machine($M_fn);
 
     my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
+    
     my @in_progress;
     my @output;
     my @dependency_blocks;
@@ -103,10 +104,9 @@ sub run_program {
         # check for iu availability
         if ($iu_in_use eq 0 && scalar @instr_queue > 0) {
             my $instr = $instr_queue[0];
-            my $operator = $instr->{'Op'};
 
             my $d_time;
-            if ($operator eq '+') {
+            if ($instr->{'Op'} eq '+') {
                 $d_time += $machine->{'plus_time'};
             }
             else {
@@ -114,10 +114,6 @@ sub run_program {
             }
 
             # check for reg depedency
-            my $l_reg = $instr->{'R1'};
-            my $r_reg1 = $instr->{'R2'};
-            my $r_reg2 = $instr->{'R3'};
-
             my $block = 0;
 
             foreach my $prog_instr (@in_progress) {
@@ -129,7 +125,7 @@ sub run_program {
                 my $in_progress_instr_counter = $prog_instr->{'instruction_counter'};
 
                 # read-after-write dependency
-                if ($in_progress_l_reg eq $r_reg1 or $in_progress_l_reg eq $r_reg2) {
+                if ($in_progress_l_reg eq $instr->{'R2'} or $in_progress_l_reg eq $instr->{'R3'}) {
                     my @dependency_entry = ($instruction_counter, $time_slice, "OI", $in_progress_instr_counter);
                     push (@dependency_blocks, \@dependency_entry);
                     
@@ -137,7 +133,7 @@ sub run_program {
                     last;
                 }
                 # write-after-write dependency
-                elsif ($in_progress_l_reg eq $l_reg) {
+                elsif ($in_progress_l_reg eq $instr->{'R1'}) {
                     if (($in_progress_load_time + $in_progress_d_time) >= ($machine->{'lu_time'} + $d_time)) {
                         my @dependency_entry = ($instruction_counter, $time_slice, "OO", $in_progress_instr_counter);
                         push (@dependency_blocks, \@dependency_entry);
@@ -147,7 +143,7 @@ sub run_program {
                     }
                 }
                 # write-after-read dependency
-                elsif ($in_progress_r_reg1 eq $l_reg || $in_progress_r_reg2 eq $l_reg) {
+                elsif ($in_progress_r_reg1 eq $instr->{'R1'} || $in_progress_r_reg2 eq $instr->{'R1'}) {
                     if ($in_progress_load_time >= ($machine->{'lu_time'} + $d_time)) {
                         my @dependency_entry = ($instruction_counter, $time_slice, "IO", $in_progress_instr_counter);
                         push (@dependency_blocks, \@dependency_entry);
@@ -184,7 +180,7 @@ sub run_program {
                     'time_slice' => $time_slice,
                     'lu_time' => $machine->{'lu_time'},
                     'd_time' => $d_time,
-                    'Op' => $operator
+                    'Op' => $instr->{'Op'}
                 };
                 
                 push(@output, $output_entry);
