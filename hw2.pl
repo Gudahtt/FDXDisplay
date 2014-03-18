@@ -67,7 +67,6 @@ sub instruction_queue {
 
     while (my $line = <$program>) {
 		my $input = parse_input($line);
-        my ($left, $op, $right_first, $right_second) = parse_input($line);
         
         if ($input->{'R1'} >= $global_registers || $input->{'R2'} >= $global_registers || $input->{'R3'} >= $global_registers) {
             die("Not enough registers");
@@ -84,17 +83,17 @@ sub run_program {
     my $M_fn = shift;
     
 	my $machine = parse_machine($M_fn);
+
+    my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
+    my @in_progress;
+    my @output;
+    my @dependency_blocks;
     
     my $d_in_use = 0;
     my $iu_in_use = 0;
     # indicates that they are about to be freed
     my $iu_freed = 0;
     my $d_freed = 0;
-
-    my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
-    my @in_progress;
-    my @output;
-    my @dependency_blocks;
 
 
     my $time_slice = 0;
@@ -386,3 +385,4 @@ MAIN: {
 
     display_HP($output, $dep_blocks);
 }
+
