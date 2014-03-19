@@ -256,6 +256,7 @@ sub run_program {
                 $cur_instr->{'d_time'}--;
             }
 
+            # Replace with updated instruction
             $in_progress[$j] = $cur_instr;
 
             # instruction finished
@@ -266,21 +267,24 @@ sub run_program {
             }
         }
 
+        # Remove completed instructions
         foreach my $num (@to_be_removed) {
             splice(@in_progress, $num, 1);
         }
 
-        $time_slice++;
+        # Clear iu_freed flag, and update iu_in_use
         if ($iu_freed eq 1) {
             $iu_freed = 0;
             $iu_in_use = 0;
         }
         
+        # Empty d_freed, and update number of d-units in use
         for (my $y = $d_freed; $y > 0; $y--) {
             $d_in_use--;
         }
         $d_freed = 0;
 
+        $time_slice++;
     }
 
     return (\@output, \@dependency_blocks);
