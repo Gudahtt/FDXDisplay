@@ -230,8 +230,10 @@ sub run_program {
             }
         }
 
-        # process in-progress
+        # Track in progress instructions that are finishing up
         my @to_be_removed;
+
+        # process in-progress
         for (my $j = 0; $j < scalar @in_progress; $j++) {
             my $cur_instr = $in_progress[$j];
             
@@ -248,17 +250,6 @@ sub run_program {
                 $cur_instr->{'d_time'}--;
 
                 $cur_instr->{'lu_time'} = 0; # set flag back to normal
-                    
-                my $d_start_time = $time_slice;
-                my $found_entry = 0;
-                for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
-                    # find current instruction to add d_start_time
-                    if ($output[$output_entry]->{'num'} eq $cur_instr->{'num'}) {
-                        $output[$output_entry]->{'d_start_time'} = $d_start_time;
-                        $found_entry = 1;
-                        last;
-                    }
-                }
             }
             # d_time
             else {
