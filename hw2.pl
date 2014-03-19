@@ -112,15 +112,6 @@ sub run_program {
             # Get next instruction (without removing from queue)
             my $instr = $instr_queue[0];
 
-            # time to process operation
-            my $d_time;
-            if ($instr->{'Op'} eq '+') {
-                $d_time += $machine->{'plus_time'};
-            }
-            else {
-                $d_time += $machine->{'mult_time'};
-            }
-
             # check for reg depedency
             my $block = 0;
 
@@ -141,19 +132,17 @@ sub run_program {
                 }
                 # write-after-write dependency
                 elsif ($prog_instr->{'R1'} eq $instr->{'R1'}) {
-                    if (($prog_instr->{'lu_time'} + $prog_instr->{'d_time'}) >= ($machine->{'lu_time'} + $d_time)) {
-                        my $dependency_entry = {
-                            'num' => $instruction_counter,
-                            'time' => $time_slice,
-                            'type' => 'OO',
-                            'conflicting_num' => $prog_instr->{'counter'}
-                        };
+                    my $dependency_entry = {
+                        'num' => $instruction_counter,
+                        'time' => $time_slice,
+                        'type' => 'OO',
+                        'conflicting_num' => $prog_instr->{'counter'}
+                    };
 
-                        push (@dependency_blocks, $dependency_entry);
+                    push (@dependency_blocks, $dependency_entry);
 
-                        $block = 1;
-                        last;
-                    }
+                    $block = 1;
+                    last;
                 }
                 # write-after-read dependency
                 elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
