@@ -281,17 +281,10 @@ sub display_HP {
     my $col_max = 0;
 
     foreach my $instr (@output) {
-        my $instr_number = $instr->{'counter'};
-        my $time_slice   = $instr->{'time_slice'};
-        my $lu_time      = $instr->{'lu_time'};
-        my $d_time       = $instr->{'d_time'};
-        my $operator     = $instr->{'Op'};
-        my $d_start_time = $instr->{'d_start_time'};
-
         my $col_counter = 0;
-        my $line = "S" . $instr_number . ":   ";
+        my $line = "S" . $instr->{'counter'} . ":   ";
         
-        for (my $i = $time_slice; $i > 0; $i--) {
+        for (my $i = $instr->{'time_slice'}; $i > 0; $i--) {
             $line .= "    ";
             $col_counter++;
         }
@@ -300,24 +293,24 @@ sub display_HP {
         $line  .= "IU |";
         $col_counter++;
 
-        for (my $j = $lu_time-1; $j > 0; $j--) {
+        for (my $j = $instr->{'lu_time'}-1; $j > 0; $j--) {
             $line .= "IU |";
             $col_counter++;
         }
 
-        if (defined $d_start_time) {
+        if (defined $instr->{'d_start_time'}) {
             # find 'waiting for d-unit' time
-            for ( my $t = $d_start_time - ($time_slice + $lu_time); $t > 0; $t--) {
+            for ( my $t = $instr->{'d_start_time'} - ($instr->{'time_slice'} + $instr->{'lu_time'}); $t > 0; $t--) {
                 $line .= " - |";
                 $col_counter++;
             }
         }
 
-        $line = $line . " ${operator} |";
+        $line = $line . " " . $instr->{'Op'} . " |";
         $col_counter++;
 
-        for (my $k = $d_time-1; $k > 0; $k--) {
-            $line = $line . " ${operator} |";
+        for (my $k = $instr->{'d_time'}-1; $k > 0; $k--) {
+            $line = $line . " " . $instr->{'Op'} . " |";
             $col_counter++;
         }
 
