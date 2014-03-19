@@ -62,12 +62,18 @@ sub instruction_queue {
     my $P_fn = shift;
     my $global_registers = shift;
 
-    open my $program, '<', $P_fn;
     my @queue;
+    my $counter = 1;
+
+    open my $program, '<', $P_fn;
 
     while (my $line = <$program>) {
 		my $input = parse_input($line);
         
+        # Add instruction number
+        $input->{'num'} = $counter;
+        $counter++;
+
         if ($input->{'R1'} >= $global_registers || $input->{'R2'} >= $global_registers || $input->{'R3'} >= $global_registers) {
             die("Not enough registers");
         }
@@ -102,128 +108,125 @@ sub run_program {
     # Keeps track of current 'time' (i.e. number of steps)
     my $time_slice = 0;
 
-    # Incremented whenever an instruction is issued
-    my $instruction_counter = 0;
-
     while (scalar @instr_queue > 0 || scalar @in_progress > 0) {
-        # First check for iu availability
-        if (scalar @instr_queue > 0 && $iu_in_use ne 0) {
-            my $dependency_entry = {
-                'num' => $instruction_counter,
-                'time' => $time_slice,
-                'type' => 'IU',
-                'conflicting_num' => -1
-            };
-
-            push (@dependency_blocks, $dependency_entry);
-        }
-        # Check d-unit availability
-        elsif (scalar @instr_queue > 0 && $d_in_use >= $machine->{'d_units'}) {
-            my $dependency_entry = {
-                'num' => $instruction_counter,
-                'time' => $time_slice,
-                'type' => 'D',
-                'conflicting_num' => -1
-            };
-
-            push (@dependency_blocks, $dependency_entry);
-        }
         # Process next instruction (if any)
-        elsif (scalar @instr_queue > 0) {
+        if (scalar @instr_queue > 0) {
             # Get next instruction (without removing from queue)
             my $instr = $instr_queue[0];
 
-            # check for reg depedency
-            my $block = 0;
-
-            foreach my $prog_instr (@in_progress) {
-                # read-after-write dependency
-                if ($prog_instr->{'R1'} eq $instr->{'R2'} or $prog_instr->{'R1'} eq $instr->{'R3'}) {
-                    my $dependency_entry = {
-                        'num' => $instruction_counter,
-                        'time' => $time_slice,
-                        'type' => 'OI',
-                        'conflicting_num' => $prog_instr->{'counter'}
-                    };
-
-                    push (@dependency_blocks, $dependency_entry);
-                    
-                    $block = 1;
-                    last;
-                }
-                # write-after-write dependency
-                elsif ($prog_instr->{'R1'} eq $instr->{'R1'}) {
-                    my $dependency_entry = {
-                        'num' => $instruction_counter,
-                        'time' => $time_slice,
-                        'type' => 'OO',
-                        'conflicting_num' => $prog_instr->{'counter'}
-                    };
-
-                    push (@dependency_blocks, $dependency_entry);
-
-                    $block = 1;
-                    last;
-                }
-                # write-after-read dependency
-                elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
-                    my $dependency_entry = {
-                        'num' => $instruction_counter,
-                        'time' => $time_slice,
-                        'type' => 'IO',
-                        'conflicting_num' => $prog_instr->{'counter'}
-                    };
-
-                    push (@dependency_blocks, $dependency_entry);
-
-                    $block = 1;
-                    last;
-                }
+            # First check for iu availability
+            if ($iu_in_use ne 0) {
+                my $dependency_entry = {
+                    'num' => $instr->{'num'},
+                    'time' => $time_slice,
+                    'type' => 'IU',
+                    'conflicting_num' => -1
+                };
+ 
+                push (@dependency_blocks, $dependency_entry);
             }
-            
-            # no dependency, process instruction
-            if ($block == 0) {
-                # Remove $instr from instruction queue
-                shift @instr_queue;
-
-                # Indicate that IU is in use, and d_unit is reserved for use
-                $iu_in_use = 1;
-                $d_in_use++; 
-
-                # time to process operation
-                my $d_time;
-                if ($instr->{'Op'} eq '+') {
-                    $d_time += $machine->{'plus_time'};
-                }
-                else {
-                    $d_time += $machine->{'mult_time'};
-                }
-
-                # Gather process info, and add to process queue
-                my $progress_entry = {
-                    'R1' => $instr->{'R1'},
-                    'Op' => $instr->{'Op'},
-                    'R2' => $instr->{'R2'},
-                    'R3' => $instr->{'R3'},
-                    'lu_time' => $machine->{'lu_time'},
-                    'd_time' => $d_time,
-                    'counter' => $instruction_counter
+            # Check d-unit availability
+            elsif ($d_in_use >= $machine->{'d_units'}) {
+                my $dependency_entry = {
+                    'num' => $instr->{'num'},
+                    'time' => $time_slice,
+                    'type' => 'D',
+                    'conflicting_num' => -1
                 };
-
-                push(@in_progress, $progress_entry);
+ 
+                push (@dependency_blocks, $dependency_entry);
+            }
+            else {
+                # check for reg depedency
+                my $block = 0;
+ 
+                foreach my $prog_instr (@in_progress) {
+                    # read-after-write dependency
+                    if ($prog_instr->{'R1'} eq $instr->{'R2'} or $prog_instr->{'R1'} eq $instr->{'R3'}) {
+                        my $dependency_entry = {
+                            'num' => $instr->{'num'},
+                            'time' => $time_slice,
+                            'type' => 'OI',
+                            'conflicting_num' => $prog_instr->{'num'}
+                        };
+ 
+                        push (@dependency_blocks, $dependency_entry);
+                        
+                        $block = 1;
+                        last;
+                    }
+                    # write-after-write dependency
+                    elsif ($prog_instr->{'R1'} eq $instr->{'R1'}) {
+                        my $dependency_entry = {
+                            'num' => $instr->{'num'},
+                            'time' => $time_slice,
+                            'type' => 'OO',
+                            'conflicting_num' => $prog_instr->{'num'}
+                        };
+ 
+                        push (@dependency_blocks, $dependency_entry);
+ 
+                        $block = 1;
+                        last;
+                    }
+                    # write-after-read dependency
+                    elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
+                        my $dependency_entry = {
+                            'num' => $instr->{'num'},
+                            'time' => $time_slice,
+                            'type' => 'IO',
+                            'conflicting_num' => $prog_instr->{'num'}
+                        };
+ 
+                        push (@dependency_blocks, $dependency_entry);
+ 
+                        $block = 1;
+                        last;
+                    }
+                }
                 
-                # Gather info for output, and add to output queue
-                my $output_entry = {
-                    'counter' => $instruction_counter,
-                    'time_slice' => $time_slice,
-                    'lu_time' => $machine->{'lu_time'},
-                    'd_time' => $d_time,
-                    'Op' => $instr->{'Op'}
-                };
-                
-                push(@output, $output_entry);
-                
-                $instruction_counter++;
+                # no dependency, process instruction
+                if ($block == 0) {
+                    # Remove $instr from instruction queue
+                    shift @instr_queue;
+ 
+                    # Indicate that IU is in use, and d_unit is reserved for use
+                    $iu_in_use = 1;
+                    $d_in_use++; 
+ 
+                    # time to process operation
+                    my $d_time;
+                    if ($instr->{'Op'} eq '+') {
+                        $d_time += $machine->{'plus_time'};
+                    }
+                    else {
+                        $d_time += $machine->{'mult_time'};
+                    }
+ 
+                    # Gather process info, and add to process queue
+                    my $progress_entry = {
+                        'num' => $instr->{'num'},
+                        'R1' => $instr->{'R1'},
+                        'Op' => $instr->{'Op'},
+                        'R2' => $instr->{'R2'},
+                        'R3' => $instr->{'R3'},
+                        'lu_time' => $machine->{'lu_time'},
+                        'd_time' => $d_time,
+                    };
+ 
+                    push(@in_progress, $progress_entry);
+                    
+                    # Gather info for output, and add to output queue
+                    my $output_entry = {
+                        'num' => $instr->{'num'},
+                        'time_slice' => $time_slice,
+                        'lu_time' => $machine->{'lu_time'},
+                        'd_time' => $d_time,
+                        'Op' => $instr->{'Op'}
+                    };
+                    
+                    push(@output, $output_entry);                    
+                }
             }
         }
 
@@ -250,7 +253,7 @@ sub run_program {
                 my $found_entry = 0;
                 for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
                     # find current instruction to add d_start_time
-                    if ($output[$output_entry]->{'counter'} eq $cur_instr->{'counter'}) {
+                    if ($output[$output_entry]->{'num'} eq $cur_instr->{'num'}) {
                         $output[$output_entry]->{'d_start_time'} = $d_start_time;
                         $found_entry = 1;
                         last;
@@ -304,7 +307,7 @@ sub display_HP {
 
     foreach my $instr (@output) {
         my $col_counter = 0;
-        my $line = "S" . $instr->{'counter'} . ":   ";
+        my $line = "S" . $instr->{'num'} . ":   ";
         
         for (my $i = $instr->{'time_slice'}; $i > 0; $i--) {
             $line .= "    ";
@@ -318,14 +321,6 @@ sub display_HP {
         for (my $j = $instr->{'lu_time'}-1; $j > 0; $j--) {
             $line .= "IU |";
             $col_counter++;
-        }
-
-        if (defined $instr->{'d_start_time'}) {
-            # find 'waiting for d-unit' time
-            for ( my $t = $instr->{'d_start_time'} - ($instr->{'time_slice'} + $instr->{'lu_time'}); $t > 0; $t--) {
-                $line .= " - |";
-                $col_counter++;
-            }
         }
 
         $line = $line . " " . $instr->{'Op'} . " |";
