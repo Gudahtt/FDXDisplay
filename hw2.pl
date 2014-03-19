@@ -127,8 +127,14 @@ sub run_program {
             foreach my $prog_instr (@in_progress) {
                 # read-after-write dependency
                 if ($prog_instr->{'R1'} eq $instr->{'R2'} or $prog_instr->{'R1'} eq $instr->{'R3'}) {
-                    my @dependency_entry = ($instruction_counter, $time_slice, "OI", $prog_instr->{'counter'});
-                    push (@dependency_blocks, \@dependency_entry);
+                    my $dependency_entry = {
+                        'num' => $instruction_counter,
+                        'time' => $time_slice,
+                        'type' => 'OI',
+                        'conflicting_num' => $prog_instr->{'counter'}
+                    };
+
+                    push (@dependency_blocks, $dependency_entry);
                     
                     $block = 1;
                     last;
@@ -136,8 +142,14 @@ sub run_program {
                 # write-after-write dependency
                 elsif ($prog_instr->{'R1'} eq $instr->{'R1'}) {
                     if (($prog_instr->{'lu_time'} + $prog_instr->{'d_time'}) >= ($machine->{'lu_time'} + $d_time)) {
-                        my @dependency_entry = ($instruction_counter, $time_slice, "OO", $prog_instr->{'counter'});
-                        push (@dependency_blocks, \@dependency_entry);
+                        my $dependency_entry = {
+                            'num' => $instruction_counter,
+                            'time' => $time_slice,
+                            'type' => 'OO',
+                            'conflicting_num' => $prog_instr->{'counter'}
+                        };
+
+                        push (@dependency_blocks, $dependency_entry);
 
                         $block = 1;
                         last;
@@ -146,8 +158,14 @@ sub run_program {
                 # write-after-read dependency
                 elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
                     if ($prog_instr->{'lu_time'} >= ($machine->{'lu_time'} + $d_time)) {
-                        my @dependency_entry = ($instruction_counter, $time_slice, "IO", $prog_instr->{'counter'});
-                        push (@dependency_blocks, \@dependency_entry);
+                        my $dependency_entry = {
+                            'num' => $instruction_counter,
+                            'time' => $time_slice,
+                            'type' => 'IO',
+                            'conflicting_num' => $prog_instr->{'counter'}
+                        };
+
+                        push (@dependency_blocks, $dependency_entry);
 
                         $block = 1;
                         last;
@@ -193,8 +211,14 @@ sub run_program {
 
         # no IU-units available
         elsif (scalar @instr_queue > 0) {
-            my @dependency_entry = ($instruction_counter, $time_slice, "IU", -1);
-            push (@dependency_blocks, \@dependency_entry);
+            my $dependency_entry = {
+                'num' => $instruction_counter,
+                'time' => $time_slice,
+                'type' => 'IU',
+                'conflicting_num' => -1
+            };
+
+            push (@dependency_blocks, $dependency_entry);
         }
 
         # process in-progress
@@ -231,8 +255,14 @@ sub run_program {
                 }
                 # no d-units available
                 else {
-                    my @dependency_entry = ($cur_instr->{'counter'}, $time_slice, "D", -1);
-                    push (@dependency_blocks, \@dependency_entry);
+                    my $dependency_entry = {
+                        'num' => $cur_instr->{'counter'},
+                        'time' => $time_slice,
+                        'type' => 'D',
+                        'conflicting_num' => -1
+                    };
+                    
+                    push (@dependency_blocks, $dependency_entry);
                 }
             }
             # d_time
@@ -343,18 +373,16 @@ sub display_HP {
     print "\n";
 
     foreach my $dep_block (@dep_blocks) {
-        my $line = "S" . $$dep_block[0] . " was blocked at time=" . $$dep_block[1];
+        my $line = "S" . $dep_block->{'num'} . " was blocked at time=" . $dep_block->{'time'};
 
-        my $dep_type = $$dep_block[2];
-
-        if ($dep_type eq "D") {
+        if ($dep_block->{'type'} eq "D") {
             $line .= " due to a lack of available D-units";
         }
-        elsif($dep_type eq "IU") {
+        elsif ($dep_block->{'type'} eq "IU") {
             $line .= " due to a lack of available IU units";
         }
         else {
-            $line .= " by a " . $dep_type . " dependency, caused by S" . $$dep_block[3];
+            $line .= " by a " . $dep_block->{'type'} . " dependency, caused by S" . $dep_block->{'conflicting_num'};
         }
 
         print $line;
