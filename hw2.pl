@@ -85,29 +85,36 @@ sub run_program {
     
 	my $machine = parse_machine($M_fn);
     
+    # Keeps track of which components are in use
     my $d_in_use = 0;
     my $iu_in_use = 0;
-    # indicates that they are about to be freed
+
+    # These flags indicate that a component will be freed
     my $iu_freed = 0;
     my $d_freed = 0;
 
     my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
+
     my @in_progress;
     my @output;
     my @dependency_blocks;
 
-
+    # Keeps track of current 'time' (i.e. number of steps)
     my $time_slice = 0;
+
+    # Incremented whenever an instruction is issued
     my $instruction_counter = 0;
 
     while (scalar @instr_queue > 0 || scalar @in_progress > 0) {
-        # check for iu availability
+        # Process next instruction (if possible)
+        # First check for iu availability
         if ($iu_in_use eq 0 && scalar @instr_queue > 0) {
+            # Get next instruction (without removing from queue)
             my $instr = $instr_queue[0];
-            my $operator = $instr->{'Op'};
 
+            # time to process operation
             my $d_time;
-            if ($operator eq '+') {
+            if ($instr->{'Op'} eq '+') {
                 $d_time += $machine->{'plus_time'};
             }
             else {
@@ -185,7 +192,7 @@ sub run_program {
                     'time_slice' => $time_slice,
                     'lu_time' => $machine->{'lu_time'},
                     'd_time' => $d_time,
-                    'Op' => $operator
+                    'Op' => $instr->{'Op'}
                 };
                 
                 push(@output, $output_entry);
