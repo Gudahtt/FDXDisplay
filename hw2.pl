@@ -106,9 +106,30 @@ sub run_program {
     my $instruction_counter = 0;
 
     while (scalar @instr_queue > 0 || scalar @in_progress > 0) {
-        # Process next instruction (if possible)
         # First check for iu availability
-        if ($iu_in_use eq 0 && scalar @instr_queue > 0) {
+        if (scalar @instr_queue > 0 && $iu_in_use ne 0) {
+            my $dependency_entry = {
+                'num' => $instruction_counter,
+                'time' => $time_slice,
+                'type' => 'IU',
+                'conflicting_num' => -1
+            };
+
+            push (@dependency_blocks, $dependency_entry);
+        }
+        # Check d-unit availability
+        elsif (scalar @instr_queue > 0 && $d_in_use >= $machine->{'d_units'}) {
+            my $dependency_entry = {
+                'num' => $instruction_counter,
+                'time' => $time_slice,
+                'type' => 'D',
+                'conflicting_num' => -1
+            };
+
+            push (@dependency_blocks, $dependency_entry);
+        }
+        # Process next instruction (if any)
+        elsif (scalar @instr_queue > 0) {
             # Get next instruction (without removing from queue)
             my $instr = $instr_queue[0];
 
@@ -164,7 +185,10 @@ sub run_program {
             if ($block == 0) {
                 # Remove $instr from instruction queue
                 shift @instr_queue;
+
+                # Indicate that IU is in use, and d_unit is reserved for use
                 $iu_in_use = 1;
+                $d_in_use++; 
 
                 # time to process operation
                 my $d_time;
@@ -199,21 +223,8 @@ sub run_program {
                 
                 push(@output, $output_entry);
                 
-                
                 $instruction_counter++;
             }
-        }
-
-        # no IU-units available
-        elsif (scalar @instr_queue > 0) {
-            my $dependency_entry = {
-                'num' => $instruction_counter,
-                'time' => $time_slice,
-                'type' => 'IU',
-                'conflicting_num' => -1
-            };
-
-            push (@dependency_blocks, $dependency_entry);
         }
 
         # process in-progress
@@ -231,33 +242,19 @@ sub run_program {
             }
             # d_time start
             elsif ($cur_instr->{'lu_time'} eq -1) {
-                if ($d_in_use < $machine->{'d_units'}) {
-                    $d_in_use++;
-                    $cur_instr->{'d_time'}--;
+                $cur_instr->{'d_time'}--;
 
-                    $cur_instr->{'lu_time'} = 0; # set flag back to normal
+                $cur_instr->{'lu_time'} = 0; # set flag back to normal
                     
-                    my $d_start_time = $time_slice;
-                    my $found_entry = 0;
-                    for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
-                        # find current instruction to add d_start_time
-                        if ($output[$output_entry]->{'counter'} eq $cur_instr->{'counter'}) {
-                            $output[$output_entry]->{'d_start_time'} = $d_start_time;
-                            $found_entry = 1;
-                            last;
-                        }
+                my $d_start_time = $time_slice;
+                my $found_entry = 0;
+                for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
+                    # find current instruction to add d_start_time
+                    if ($output[$output_entry]->{'counter'} eq $cur_instr->{'counter'}) {
+                        $output[$output_entry]->{'d_start_time'} = $d_start_time;
+                        $found_entry = 1;
+                        last;
                     }
-                }
-                # no d-units available
-                else {
-                    my $dependency_entry = {
-                        'num' => $cur_instr->{'counter'},
-                        'time' => $time_slice,
-                        'type' => 'D',
-                        'conflicting_num' => -1
-                    };
-                    
-                    push (@dependency_blocks, $dependency_entry);
                 }
             }
             # d_time
