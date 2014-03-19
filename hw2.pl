@@ -67,7 +67,6 @@ sub instruction_queue {
 
     while (my $line = <$program>) {
 		my $input = parse_input($line);
-        my ($left, $op, $right_first, $right_second) = parse_input($line);
         
         if ($input->{'R1'} >= $global_registers || $input->{'R2'} >= $global_registers || $input->{'R3'} >= $global_registers) {
             die("Not enough registers");
@@ -84,6 +83,13 @@ sub run_program {
     my $M_fn = shift;
     
 	my $machine = parse_machine($M_fn);
+
+    my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
+    
+    # Queues used to keep track of program operation
+    my @in_progress;
+    my @output;
+    my @dependency_blocks;
     
     # Keeps track of which components are in use
     my $d_in_use = 0;
@@ -92,12 +98,6 @@ sub run_program {
     # These flags indicate that a component will be freed
     my $iu_freed = 0;
     my $d_freed = 0;
-
-    my @instr_queue = instruction_queue($P_fn, $machine->{'global_registers'});
-
-    my @in_progress;
-    my @output;
-    my @dependency_blocks;
 
     # Keeps track of current 'time' (i.e. number of steps)
     my $time_slice = 0;
@@ -122,32 +122,21 @@ sub run_program {
             }
 
             # check for reg depedency
-            my $l_reg = $instr->{'R1'};
-            my $r_reg1 = $instr->{'R2'};
-            my $r_reg2 = $instr->{'R3'};
-
             my $block = 0;
 
             foreach my $prog_instr (@in_progress) {
-                my $in_progress_l_reg         = $prog_instr->{'R1'};
-                my $in_progress_r_reg1        = $prog_instr->{'R2'};
-                my $in_progress_r_reg2        = $prog_instr->{'R3'};
-                my $in_progress_load_time     = $prog_instr->{'lu_time'};
-                my $in_progress_d_time        = $prog_instr->{'d_time'};
-                my $in_progress_instr_counter = $prog_instr->{'instruction_counter'};
-
                 # read-after-write dependency
-                if ($in_progress_l_reg eq $r_reg1 or $in_progress_l_reg eq $r_reg2) {
-                    my @dependency_entry = ($instruction_counter, $time_slice, "OI", $in_progress_instr_counter);
+                if ($prog_instr->{'R1'} eq $instr->{'R2'} or $prog_instr->{'R1'} eq $instr->{'R3'}) {
+                    my @dependency_entry = ($instruction_counter, $time_slice, "OI", $prog_instr->{'counter'});
                     push (@dependency_blocks, \@dependency_entry);
                     
                     $block = 1;
                     last;
                 }
                 # write-after-write dependency
-                elsif ($in_progress_l_reg eq $l_reg) {
-                    if (($in_progress_load_time + $in_progress_d_time) >= ($machine->{'lu_time'} + $d_time)) {
-                        my @dependency_entry = ($instruction_counter, $time_slice, "OO", $in_progress_instr_counter);
+                elsif ($prog_instr->{'R1'} eq $instr->{'R1'}) {
+                    if (($prog_instr->{'lu_time'} + $prog_instr->{'d_time'}) >= ($machine->{'lu_time'} + $d_time)) {
+                        my @dependency_entry = ($instruction_counter, $time_slice, "OO", $prog_instr->{'counter'});
                         push (@dependency_blocks, \@dependency_entry);
 
                         $block = 1;
@@ -155,9 +144,9 @@ sub run_program {
                     }
                 }
                 # write-after-read dependency
-                elsif ($in_progress_r_reg1 eq $l_reg || $in_progress_r_reg2 eq $l_reg) {
-                    if ($in_progress_load_time >= ($machine->{'lu_time'} + $d_time)) {
-                        my @dependency_entry = ($instruction_counter, $time_slice, "IO", $in_progress_instr_counter);
+                elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
+                    if ($prog_instr->{'lu_time'} >= ($machine->{'lu_time'} + $d_time)) {
+                        my @dependency_entry = ($instruction_counter, $time_slice, "IO", $prog_instr->{'counter'});
                         push (@dependency_blocks, \@dependency_entry);
 
                         $block = 1;
@@ -169,7 +158,7 @@ sub run_program {
             
             # no dependency, process instruction
             if ($block == 0) {
-                # Remove from instruction queue
+                # Remove $instr from instruction queue
                 shift @instr_queue;
                 $iu_in_use = 1;
 
@@ -181,14 +170,14 @@ sub run_program {
                     'R3' => $instr->{'R3'},
                     'lu_time' => $machine->{'lu_time'},
                     'd_time' => $d_time,
-                    'instruction_counter' => $instruction_counter
+                    'counter' => $instruction_counter
                 };
 
                 push(@in_progress, $progress_entry);
                 
                 # Gather info for output, and add to output queue
                 my $output_entry = {
-                    'instruction_counter' => $instruction_counter,
+                    'counter' => $instruction_counter,
                     'time_slice' => $time_slice,
                     'lu_time' => $machine->{'lu_time'},
                     'd_time' => $d_time,
@@ -233,7 +222,7 @@ sub run_program {
                     my $found_entry = 0;
                     for ( my $output_entry = 0; $output_entry < scalar (@output); $output_entry++) {
                         # find current instruction to add d_start_time
-                        if ($output[$output_entry]->{'instruction_counter'} eq $cur_instr->{'instruction_counter'}) {
+                        if ($output[$output_entry]->{'counter'} eq $cur_instr->{'counter'}) {
                             $output[$output_entry]->{'d_start_time'} = $d_start_time;
                             $found_entry = 1;
                             last;
@@ -242,7 +231,7 @@ sub run_program {
                 }
                 # no d-units available
                 else {
-                    my @dependency_entry = ($cur_instr->{'instruction_counter'}, $time_slice, "D", -1);
+                    my @dependency_entry = ($cur_instr->{'counter'}, $time_slice, "D", -1);
                     push (@dependency_blocks, \@dependency_entry);
                 }
             }
@@ -292,7 +281,7 @@ sub display_HP {
     my $col_max = 0;
 
     foreach my $instr (@output) {
-        my $instr_number = $instr->{'instruction_counter'};
+        my $instr_number = $instr->{'counter'};
         my $time_slice   = $instr->{'time_slice'};
         my $lu_time      = $instr->{'lu_time'};
         my $d_time       = $instr->{'d_time'};
@@ -393,3 +382,4 @@ MAIN: {
 
     display_HP($output, $dep_blocks);
 }
+
