@@ -146,21 +146,18 @@ sub run_program {
                 }
                 # write-after-read dependency
                 elsif ($prog_instr->{'R2'} eq $instr->{'R1'} || $prog_instr->{'R3'} eq $instr->{'R1'}) {
-                    if ($prog_instr->{'lu_time'} >= ($machine->{'lu_time'} + $d_time)) {
-                        my $dependency_entry = {
-                            'num' => $instruction_counter,
-                            'time' => $time_slice,
-                            'type' => 'IO',
-                            'conflicting_num' => $prog_instr->{'counter'}
-                        };
+                    my $dependency_entry = {
+                        'num' => $instruction_counter,
+                        'time' => $time_slice,
+                        'type' => 'IO',
+                        'conflicting_num' => $prog_instr->{'counter'}
+                    };
 
-                        push (@dependency_blocks, $dependency_entry);
+                    push (@dependency_blocks, $dependency_entry);
 
-                        $block = 1;
-                        last;
-                    }
+                    $block = 1;
+                    last;
                 }
-                
             }
             
             # no dependency, process instruction
@@ -168,6 +165,15 @@ sub run_program {
                 # Remove $instr from instruction queue
                 shift @instr_queue;
                 $iu_in_use = 1;
+
+                # time to process operation
+                my $d_time;
+                if ($instr->{'Op'} eq '+') {
+                    $d_time += $machine->{'plus_time'};
+                }
+                else {
+                    $d_time += $machine->{'mult_time'};
+                }
 
                 # Gather process info, and add to process queue
                 my $progress_entry = {
