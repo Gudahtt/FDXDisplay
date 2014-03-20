@@ -10,10 +10,10 @@ Usage:
 =head1 DESCRIPTION
 
 This script emulates a simple machine that accepts only R-type instructions,
-and outputs the resulting HP diagrams.  The only operations allowed are
+and outputs the resulting HP diagrams. The only operations allowed are
 addition and multiplication. It accepts two files as inputs: the first
-specifying the program to be run, and the second containing the specs of the
-machine.  The output will also note any dependencies that block execution for
+containing the specs of the machine, and the second specifying the program to
+be run. The output will also note any dependencies that block execution for
 any length of time.
 
 This script uses only vanilla perl.  No special modules are needed.
