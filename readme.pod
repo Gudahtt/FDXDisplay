@@ -1,11 +1,11 @@
 =pod
 
-=head1 HW2 User Guide
+=head1 HW4 User Guide
 
 =head1 SYNOPSIS
 
 Usage:
-    perl hw2.pl program machine
+    perl hw4.pl program machine
 
 =head1 DESCRIPTION
 
