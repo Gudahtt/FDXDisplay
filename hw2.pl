@@ -374,11 +374,11 @@ sub display_HP {
 }
 
 MAIN: {
-    my $P_fn = shift;
     my $M_fn = shift;
+    my $P_fn = shift;
 
     if (! defined $P_fn || ! defined $M_fn) {
-        die("Not enough arguments.  Usage: perl hw2.pl [program] [machine]");
+        die("Not enough arguments.  Usage: perl hw2.pl [machine] [program]");
     }
 
     my ($output, $dep_blocks) = run_program($P_fn, $M_fn);
