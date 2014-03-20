@@ -61,12 +61,21 @@ sub parse_machine {
 sub instruction_queue {
     my $P_fn = shift;
     my $global_registers = shift;
+    
+    # Keep track of used registers
+    my $used_registers = {};
+    
+    foreach my $register (1..$global_registers) {
+        # 0 signifies that the register is free
+        $used_registers->{"${register}"} = 0;
+    }
 
     my @queue;
     my $counter = 1;
 
     open my $program, '<', $P_fn;
 
+    # parse input and construction instruction queue
     while (my $line = <$program>) {
 		my $input = parse_input($line);
         
@@ -74,13 +83,116 @@ sub instruction_queue {
         $input->{'num'} = $counter;
         $counter++;
 
-        if ($input->{'R1'} >= $global_registers || $input->{'R2'} >= $global_registers || $input->{'R3'} >= $global_registers) {
+        # check for instructions using invalid registers
+        if ($input->{'R1'} > $global_registers || $input->{'R2'} > $global_registers || $input->{'R3'} > $global_registers) {
             die("Not enough registers");
         }
+        
+        # Check off any used registers
+        if ($used_registers->{ $input->{'R1'} } eq 0) {
+            $used_registers->{ $input->{'R1'} } = 1;
+        }
+        if ($used_registers->{ $input->{'R2'} } eq 0) {
+            $used_registers->{ $input->{'R2'} } = 1;
+        }
+        if ($used_registers->{ $input->{'R3'} } eq 0) {
+            $used_registers->{ $input->{'R3'} } = 1;
+        } 
 
         push (@queue, $input);
     }
-
+    
+    # construct list of free registers
+    my @free_registers;
+    for my $key (keys %$used_registers) {
+        if ($used_registers->{$key} eq 0) {
+            push (@free_registers, $key);
+        }
+    }
+    
+    # detect anti-dependencies, and resolve using register renaming if possible
+    OUTER:
+    for (my $i = 0; $i < scalar(@queue) - 1; $i++) {
+        if (scalar @free_registers <= 0) {
+            print STDERR "WARNING: ran out of free registers. Unable to complete register renaming.\n";
+            last OUTER;
+        }
+                    
+        for (my $j = $i + 1; $j < scalar(@queue); $j++) {
+            # Check for OO dependency
+            if ($queue[$i]->{'R1'} eq $queue[$j]->{'R1'}) {
+                my $new_register = shift @free_registers;
+                
+                # Rename conflicting register
+                $queue[$j]->{'R1'} = $new_register;
+                
+                # rename all subsequent uses
+                for (my $k = $j + 1; $k < scalar(@queue); $k++) {
+                    if ($queue[$k]->{'R1'} eq $queue[$i]->{'R1'}) {
+                        $queue[$k]->{'R1'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R2'} eq $queue[$i]->{'R1'}) {
+                        $queue[$k]->{'R2'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R3'} eq $queue[$i]->{'R1'}) {
+                        $queue[$k]->{'R3'} = $new_register;
+                    }
+                }
+            }
+            # Check for IO dependency
+            if ($queue[$i]->{'R2'} eq $queue[$j]->{'R1'}) {
+                # re-check to ensure there are free registers
+                if (scalar @free_registers <= 0) {
+                    print STDERR "WARNING: ran out of free registers. Unable to complete register renaming.\n";
+                    last OUTER;
+                }
+                
+                my $new_register = shift @free_registers;
+                
+                # Rename conflicting register
+                $queue[$j]->{'R1'} = $new_register;
+                
+                # rename all subsequent uses
+                for (my $k = $j + 1; $k < scalar(@queue); $k++) {
+                    if ($queue[$k]->{'R1'} eq $queue[$i]->{'R2'}) {
+                        $queue[$k]->{'R1'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R2'} eq $queue[$i]->{'R2'}) {
+                        $queue[$k]->{'R2'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R3'} eq $queue[$i]->{'R2'}) {
+                        $queue[$k]->{'R3'} = $new_register;
+                    }
+                }
+            }
+            if ($queue[$i]->{'R3'} eq $queue[$j]->{'R1'}) {
+                # re-check to ensure there are free registers
+                if (scalar @free_registers <= 0) {
+                    print STDERR "WARNING: ran out of free registers. Unable to complete register renaming.\n";
+                    last OUTER;
+                }
+                
+                my $new_register = shift @free_registers;
+                
+                # Rename conflicting register
+                $queue[$j]->{'R1'} = $new_register;
+                
+                # rename all subsequent uses
+                for (my $k = $j + 1; $k < scalar(@queue); $k++) {
+                    if ($queue[$k]->{'R1'} eq $queue[$i]->{'R3'}) {
+                        $queue[$k]->{'R1'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R2'} eq $queue[$i]->{'R3'}) {
+                        $queue[$k]->{'R2'} = $new_register;
+                    }
+                    if ($queue[$k]->{'R3'} eq $queue[$i]->{'R3'}) {
+                        $queue[$k]->{'R3'} = $new_register;
+                    }
+                }
+            }
+        }
+    }
+    
     return @queue;
 }
 
